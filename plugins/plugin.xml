@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<plugin>
+
+   <extension
+         point="org.eclipse.ui.views">
+      <category
+            name="Asciidoctor"
+            id="ca.rideauosgoode.eclipse.asciidoctor.preview">
+      </category>
+      <view
+            id="ca.rideauosgoode.eclipse.asciidoctor.views.AsciidoctorPreview"
+            name="Asciidoctor Preview"
+            icon="icons/asciidoctor.ico"
+            class="ca.rideauosgoode.eclipse.asciidoctor.views.AsciidoctorPreview"
+            category="ca.rideauosgoode.eclipse.asciidoctor.preview"
+            inject="true">
+      </view>
+   </extension>
+   <extension
+         point="org.eclipse.ui.perspectiveExtensions">
+      <perspectiveExtension
+            targetID="org.eclipse.jdt.ui.JavaPerspective">
+         <view
+               id="ca.rideauosgoode.eclipse.asciidoctor.views.AsciidoctorPreview"
+               relative="org.eclipse.ui.views.ProblemView"
+               relationship="right"
+               ratio="0.5">
+         </view>
+      </perspectiveExtension>
+   </extension>
+
+</plugin>
