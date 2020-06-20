@@ -79,6 +79,7 @@ public class AsciidoctorPreview extends ViewPart {
 	public void init(IViewSite site, IMemento memento) throws PartInitException {
 		super.init(site, memento);
 		try {
+			if (memento == null) return;
 			String data = memento.getString("file");
 			if (data == null) return;
 			IFile[] files = ResourcesPlugin.getWorkspace().getRoot().findFilesForLocationURI(new URI(data));
