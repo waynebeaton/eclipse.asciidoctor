@@ -5,9 +5,7 @@ Bundle-SymbolicName: ca.rideauosgoode.eclipse.asciidoctor;singleton:=true
 Bundle-Version: 0.1.0.qualifier
 Require-Bundle: org.eclipse.core.runtime,
  org.eclipse.ui,
- org.eclipse.core.resources;bundle-version="3.13.700",
- org.asciidoctor.asciidoctorj-api;bundle-version="2.4.0",
- org.asciidoctor.asciidoctorj;bundle-version="2.4.0"
+ org.eclipse.core.resources;bundle-version="3.13.700"
 Bundle-RequiredExecutionEnvironment: JavaSE-1.8
 Import-Package: javax.inject
 Automatic-Module-Name: ca.rideauosgoode.eclipse.asciidoctor
