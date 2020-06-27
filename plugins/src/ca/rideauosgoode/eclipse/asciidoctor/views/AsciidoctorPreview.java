@@ -13,6 +13,8 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javax.inject.Inject;
 
@@ -23,16 +25,24 @@ import org.eclipse.core.resources.IResourceChangeListener;
 import org.eclipse.core.resources.IResourceDelta;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.IPath;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.util.LocalSelectionTransfer;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.browser.Browser;
+import org.eclipse.swt.browser.LocationListener;
 import org.eclipse.swt.dnd.DND;
 import org.eclipse.swt.dnd.DropTarget;
 import org.eclipse.swt.dnd.DropTargetAdapter;
 import org.eclipse.swt.dnd.DropTargetEvent;
+import org.eclipse.swt.events.SelectionAdapter;
+import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
+import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.ui.IMemento;
@@ -74,6 +84,8 @@ public class AsciidoctorPreview extends ViewPart {
 	private Label label;
 
 	private IResourceChangeListener resourceChangeListener;
+
+	private Job previewJob;
 	
 	@Override
 	public void init(IViewSite site, IMemento memento) throws PartInitException {
@@ -84,9 +96,7 @@ public class AsciidoctorPreview extends ViewPart {
 			if (data == null) return;
 			IFile[] files = ResourcesPlugin.getWorkspace().getRoot().findFilesForLocationURI(new URI(data));
 			if (files.length > 0) {
-				site.getShell().getDisplay().asyncExec(() -> {
-					renderFile(files[0]);
-				});
+				this.file = files[0];
 			}
 		} catch (URISyntaxException e) {
 			// Maybe log this.
@@ -97,20 +107,36 @@ public class AsciidoctorPreview extends ViewPart {
 	
 	@Override
 	public void createPartControl(Composite parent) {
-		// Add the parts. I've added the label primarily because I 
-		// couldn't sort out how to get the drop handler to work on the
-		// browser.
-		label = new Label(parent, SWT.NONE);
+		Composite panel = new Composite(parent, SWT.NONE);
+		label = new Label(panel, SWT.NONE);
 		label.setText("Drop an Asciidoc file here");
+		Button back = new Button(panel, SWT.PUSH | SWT.FLAT);
+		back.setText("<");
 		browser = new Browser(parent, SWT.WEBKIT);
 		browser.setText("hello");
 		
+		GridLayout layout = new GridLayout(2, false);
+		panel.setLayout(layout);
+		label.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+		back.setLayoutData(new GridData(SWT.FILL, SWT.TOP, false, true));
+		
 		// Grid layout puts the label at the top; the browser takes up
 		// all remaining space.
-		GridLayout layout = new GridLayout(1, false);
+		layout = new GridLayout(1, false);
 		parent.setLayout(layout);
-		label.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
+		panel.setLayoutData(new GridData(SWT.FILL, SWT.TOP, true, false));
 		browser.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
+		
+		back.addSelectionListener(new SelectionAdapter() {
+			@Override
+			public void widgetSelected(SelectionEvent e) {
+				browser.back();
+			}
+		});
+		
+		browser.addLocationListener(LocationListener.changedAdapter(event -> {
+			if (event.top) label.setText(event.location);
+		}));
 		
 		// Configure drag and drop so that we can load the view.
 		DropTarget target = new DropTarget(label, DND.DROP_DEFAULT | DND.DROP_MOVE | DND.DROP_COPY | DND.DROP_LINK);
@@ -132,9 +158,46 @@ public class AsciidoctorPreview extends ViewPart {
 			}
 
 			private void drop(IFile file) {
-				renderFile(file);
+				AsciidoctorPreview.this.file = file;
+				updatePreview();
 			}
 		});
+		
+		previewJob = new Job("Asciidoc preview") {
+			protected IStatus run(IProgressMonitor monitor) {
+				label.getDisplay().syncExec(() -> {
+					label.setEnabled(false);
+					browser.setEnabled(false);
+				});
+				IPath previewPath = rebuild();
+				if (previewPath != null) {
+					label.getDisplay().syncExec(() -> {
+						if (browser == null) return;
+						if (browser.isDisposed()) return;
+						String url = browser.getUrl();
+						if (matches(previewPath.toString(), url)) {
+							browser.refresh();
+						} else {
+							browser.setUrl(previewPath.toString());
+						}
+						label.setEnabled(true);
+						browser.setEnabled(true);
+					});
+				}
+				return Status.OK_STATUS;
+			}
+
+			/*
+			 * Answers true when the preview path would point the browser to the same
+			 * URL that it's already pointing at. The preview path doesn't include
+			 * any protocol or anchor; the URL (likely) does.
+			 */
+			private boolean matches(String previewPath, String url) {
+				Matcher matcher = Pattern.compile("(file://)?"+Pattern.quote(previewPath)+"(#.*)?").matcher(url);
+				return matcher.matches();
+			}
+		};
+		previewJob.setPriority(Job.SHORT);
 		
 		// Install a resource change listener on the workspace. When
 		// any file in the directory (or any subdirectory) that contains
@@ -149,15 +212,19 @@ public class AsciidoctorPreview extends ViewPart {
 				if (delta == null) return;
 				if (delta.getResource().getType() == IResource.FILE) return;
 				
-				// Probably should use a job here, this could still
-				// block the UI if the build job takes too long.
-				parent.getDisplay().asyncExec(() -> {
-					rebuild();
-					browser.refresh();
-				});
+				updatePreview();
 			}
 		};
 		ResourcesPlugin.getWorkspace().addResourceChangeListener(resourceChangeListener);
+		
+		updatePreview();
+	}
+	
+
+	private void updatePreview() {
+		if (this.file == null)
+			return;
+		previewJob.schedule();
 	}
 
 	/**
@@ -182,20 +249,6 @@ public class AsciidoctorPreview extends ViewPart {
 	}
 	
 	/**
-	 * When we render a file, we get the build script to run to make
-	 * sure that our preview content exists and is current.
-	 * 
-	 * In a perfect world, we should probably check that the file is
-	 * actually Asciidoc source (maybe check the file extension as a minimum).
-	 */
-	protected void renderFile(IFile file) {
-		this.file = file;
-		rebuild();
-		label.setText(file.getFullPath().toString());
-		browser.setUrl(file.getRawLocation().removeFileExtension().addFileExtension("html").toString());
-	}
-
-	/**
 	 * Generate the preview content. This assumes that a script named
 	 * "convert.js" exists in the same directory as the source file, that
 	 * calling node with this file will generate the preview, and that the
@@ -207,19 +260,33 @@ public class AsciidoctorPreview extends ViewPart {
 	 * preview is generated and what file it ends up in; or maybe leverage 
 	 * AsciidoctorJ (at least as a default/fallback).
 	 */
-	private void rebuild() {
-		if (file == null) return;
-		if (!file.exists()) return;
-		IPath path = file.getParent().getRawLocation();
+	private IPath rebuild() {
+		if (file == null) return null;
+		if (!file.exists()) return null;
 		try {
-			ProcessBuilder builder = new ProcessBuilder();
-			builder.directory(new File(path.toOSString() + "/"));
-			builder.command("/usr/bin/node", "convert.js");
-			builder.start().waitFor();
+			IResource buildFile = file.getParent().findMember("convert.js");
+			if (buildFile != null) {
+				ProcessBuilder builder = new ProcessBuilder();
+				builder.directory(new File(buildFile.getParent().getRawLocation().toOSString() + "/"));
+				builder.command("/usr/bin/node", "convert.js");
+				builder.start().waitFor();
+				return file.getRawLocation().removeFileExtension().addFileExtension("html");
+			} else {
+				buildFile = file.getParent().getParent().findMember("pom.xml");
+				if (buildFile != null) {
+					ProcessBuilder builder = new ProcessBuilder();
+					builder.directory(new File(buildFile.getParent().getRawLocation().toOSString() + "/"));
+					builder.command("/usr/bin/nice", "/home/apps/apache-maven-3.6.3-bin/apache-maven-3.6.3/bin/mvn", "generate-resources");
+					builder.inheritIO();
+					builder.start().waitFor();
+					return buildFile.getParent().getRawLocation().append("target/generated-docs/").append(file.getName()).removeFileExtension().addFileExtension("html");
+				}
+			}
 		} catch (IOException | InterruptedException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+		return null;
 	}
 	
 	@Override
