@@ -9,25 +9,14 @@
             id="ca.rideauosgoode.eclipse.asciidoctor.preview">
       </category>
       <view
-            id="ca.rideauosgoode.eclipse.asciidoctor.views.AsciidoctorPreview"
-            name="Asciidoctor Preview"
-            icon="icons/asciidoctor.ico"
-            class="ca.rideauosgoode.eclipse.asciidoctor.views.AsciidoctorPreview"
+            allowMultiple="true"
             category="ca.rideauosgoode.eclipse.asciidoctor.preview"
-            inject="true">
+            class="ca.rideauosgoode.eclipse.asciidoctor.views.AsciidoctorPreview"
+            icon="icons/asciidoctor.ico"
+            id="ca.rideauosgoode.eclipse.asciidoctor.views.AsciidoctorPreview"
+            inject="true"
+            name="Asciidoctor Preview">
       </view>
-   </extension>
-   <extension
-         point="org.eclipse.ui.perspectiveExtensions">
-      <perspectiveExtension
-            targetID="org.eclipse.jdt.ui.JavaPerspective">
-         <view
-               id="ca.rideauosgoode.eclipse.asciidoctor.views.AsciidoctorPreview"
-               relative="org.eclipse.ui.views.ProblemView"
-               relationship="right"
-               ratio="0.5">
-         </view>
-      </perspectiveExtension>
    </extension>
 
 </plugin>
